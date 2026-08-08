@@ -296,22 +296,60 @@ final class DefinitionPanel: NSObject {
         if keepingTopLeft, panel.isVisible {
             frame.origin = NSPoint(x: topLeft.x, y: topLeft.y - totalHeight)
         }
-        panel.setFrame(frame, display: true)
+        panel.setFrame(constrained(frame, near: nil), display: true)
         container.frame = NSRect(origin: .zero, size: frame.size)
     }
 
     private func position(at point: NSPoint) {
         guard let panel else { return }
         let size = panel.frame.size
-        let screen = NSScreen.screens.first { $0.frame.contains(point) } ?? NSScreen.main
-        let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let visible = visibleArea(near: point, frame: panel.frame)
 
+        // Below-right of the pointer by default; flip to the other side when that would run
+        // past an edge, so the panel never covers the word it is describing.
         var origin = NSPoint(x: point.x + 12, y: point.y - size.height - 12)
-        if origin.x + size.width > visible.maxX { origin.x = point.x - size.width - 12 }
-        if origin.x < visible.minX { origin.x = visible.minX + 8 }
-        if origin.y < visible.minY { origin.y = point.y + 18 }
-        if origin.y + size.height > visible.maxY { origin.y = visible.maxY - size.height - 8 }
-        panel.setFrameOrigin(origin)
+        if origin.x + size.width > visible.maxX - margin { origin.x = point.x - size.width - 12 }
+        if origin.y < visible.minY + margin { origin.y = point.y + 18 }
+
+        panel.setFrame(constrained(NSRect(origin: origin, size: size), near: point), display: true)
+    }
+
+    private let margin: CGFloat = 8
+
+    /// The usable area of the screen the panel belongs to. `visibleFrame` already excludes
+    /// the menu bar and the Dock, whichever edge the Dock happens to be on.
+    private func visibleArea(near anchor: NSPoint?, frame: NSRect) -> NSRect {
+        let screen: NSScreen?
+        if let anchor, let containing = NSScreen.screens.first(where: { $0.frame.contains(anchor) }) {
+            screen = containing
+        } else {
+            // No anchor: whichever screen the panel currently overlaps most.
+            screen = NSScreen.screens.max { a, b in
+                a.frame.intersection(frame).area < b.frame.intersection(frame).area
+            } ?? NSScreen.main
+        }
+        return screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+    }
+
+    /// Pulls a frame back inside the visible area. Applied to every placement — the initial
+    /// position, a ⌘+ resize, and the growth that happens when Claude's answer arrives — so
+    /// the panel can never end up off an edge or under the Dock.
+    private func constrained(_ frame: NSRect, near anchor: NSPoint?) -> NSRect {
+        let visible = visibleArea(near: anchor, frame: frame)
+        var result = frame
+
+        let maxX = max(visible.maxX - result.width - margin, visible.minX + margin)
+        result.origin.x = min(max(result.origin.x, visible.minX + margin), maxX)
+
+        let maxY = max(visible.maxY - result.height - margin, visible.minY + margin)
+        result.origin.y = min(max(result.origin.y, visible.minY + margin), maxY)
+
+        // Taller than the screen (a long Claude answer at a large zoom): keep the top edge
+        // on screen so the word and its definition stay readable.
+        if result.height > visible.height - margin * 2 {
+            result.origin.y = visible.maxY - result.height - margin
+        }
+        return result
     }
 
     private func present() {
@@ -395,6 +433,11 @@ final class DefinitionPanel: NSObject {
             for: flipped, in: container, fractionOfDistanceBetweenInsertionPoints: nil)
         return index < storage.length ? index : nil
     }
+}
+
+private extension NSRect {
+    /// Zero for the empty rect `intersection` returns when two frames don't overlap.
+    var area: CGFloat { isEmpty ? 0 : width * height }
 }
 
 /// Small pill button used for the other words on the clicked line.
