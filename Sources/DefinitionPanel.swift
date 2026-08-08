@@ -345,9 +345,23 @@ final class DefinitionPanel: NSObject {
             }
             self?.hide()
         }
-        let inside = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
-            if event.keyCode == 53 { self?.hide(); return nil } // esc
-            return event
+        let inside = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { [weak self] event in
+            guard let self else { return event }
+
+            if event.type == .keyDown {
+                if event.keyCode == 53 { self.hide(); return nil } // esc
+                return event
+            }
+
+            // ⌘-click inside the panel looks up that word too, so you can follow a term from
+            // the definition or from Claude's answer without going back to the terminal.
+            guard event.window === self.panel,
+                  event.modifierFlags.contains(.command),
+                  let word = self.word(at: event.locationInWindow)
+            else { return event }
+
+            self.onTokenSelected?(word)
+            return nil
         }
         monitors = [outside, inside].compactMap { $0 }
     }
@@ -355,6 +369,42 @@ final class DefinitionPanel: NSObject {
     private func removeMonitors() {
         monitors.forEach { NSEvent.removeMonitor($0) }
         monitors.removeAll()
+    }
+
+    // MARK: - Hit-testing the panel's own text
+
+    /// Which word sits under `windowPoint` in one of the panel's labels, if any.
+    private func word(at windowPoint: NSPoint) -> String? {
+        for field in [bodyLabel, contextLabel, termLabel].compactMap({ $0 }) where !field.isHidden {
+            let local = field.convert(windowPoint, from: nil)
+            guard field.bounds.contains(local) else { continue }
+            guard let index = characterIndex(in: field, at: local),
+                  let hit = WordAtPoint.word(in: field.stringValue, at: index)
+            else { continue }
+            return hit.word
+        }
+        return nil
+    }
+
+    /// Lays the label's text out again through TextKit to find the character under a point.
+    /// `NSTextField` has no public API for this, so the layout is reproduced to match.
+    private func characterIndex(in field: NSTextField, at point: NSPoint) -> Int? {
+        let storage = NSTextStorage(attributedString: field.attributedStringValue)
+        let container = NSTextContainer(size: NSSize(width: field.bounds.width, height: .greatestFiniteMagnitude))
+        container.lineFragmentPadding = 2   // NSTextField's own inset
+        container.maximumNumberOfLines = field.maximumNumberOfLines
+
+        let manager = NSLayoutManager()
+        manager.addTextContainer(container)
+        storage.addLayoutManager(manager)
+        manager.ensureLayout(for: container)
+
+        // Text lays out top-down; NSTextField is not a flipped view, so mirror the y axis.
+        let flipped = field.isFlipped ? point : NSPoint(x: point.x, y: field.bounds.height - point.y)
+
+        let index = manager.characterIndex(
+            for: flipped, in: container, fractionOfDistanceBetweenInsertionPoints: nil)
+        return index < storage.length ? index : nil
     }
 }
 

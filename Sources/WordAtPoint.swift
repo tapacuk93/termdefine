@@ -28,7 +28,7 @@ enum WordAtPoint {
         guard let text = string(in: element, range: CFRange(location: start, length: contextRadius * 2))
         else { return nil }
 
-        return extract(from: text, at: index - start)
+        return word(in: text, at: index - start)
     }
 
     // MARK: - Accessibility queries
@@ -72,7 +72,10 @@ enum WordAtPoint {
 
     /// Walks outward from `offset` to the edges of the word, and separately to the edges of
     /// the line, so the caller gets both the token and the context it sits in.
-    private static func extract(from text: String, at offset: Int) -> (word: String, line: String)? {
+    ///
+    /// Shared with the panel, which runs the same extraction over its own labels so a word in
+    /// the definition or in Claude's answer can be ⌘-clicked the same way.
+    static func word(in text: String, at offset: Int) -> (word: String, line: String)? {
         let characters = Array(text)
         guard offset >= 0, offset < characters.count else { return nil }
 
