@@ -40,6 +40,10 @@ The same ⌘-click works **inside the popup itself** — click any word in the d
 Claude's answer to look that one up, without going back to the terminal. The panel keeps its
 position and the screen context it was opened with.
 
+The panel is **draggable** — pull it by its background or header to move it aside. Dragging
+starting on the definition or Claude's answer selects text instead, since those stay
+selectable. The next lookup opens a fresh panel at the pointer.
+
 **⌘+ / ⌘−** resize the popup while it's open, and the size is remembered. Those two keys are
 swallowed while the panel is showing, so the terminal doesn't zoom its own font at the same
 time; everywhere else they behave normally.

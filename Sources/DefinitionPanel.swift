@@ -5,7 +5,7 @@ import AppKit
 ///
 /// Every metric below is expressed at scale 1.0 and multiplied by `Settings.panelScale`,
 /// which ⌘+ / ⌘− adjust and which persists between launches.
-final class DefinitionPanel: NSObject {
+final class DefinitionPanel: NSObject, NSWindowDelegate {
 
     /// The Claude-powered, screen-aware section under the offline definition.
     enum ContextState {
@@ -150,6 +150,10 @@ final class DefinitionPanel: NSObject {
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.animationBehavior = .utilityWindow
+        // Drag the panel by its background or header to move it out of the way. The body and
+        // context labels stay selectable, so a drag starting on those selects text instead.
+        panel.isMovableByWindowBackground = true
+        panel.delegate = self
         self.panel = panel
 
         applyFonts()
@@ -369,6 +373,15 @@ final class DefinitionPanel: NSObject {
     private func removeMonitors() {
         monitors.forEach { NSEvent.removeMonitor($0) }
         monitors.removeAll()
+    }
+
+    // MARK: - NSWindowDelegate
+
+    /// Someone just dragged the panel somewhere deliberate — restart the dismissal clock so
+    /// it doesn't vanish moments after being repositioned.
+    func windowDidMove(_ notification: Notification) {
+        guard isVisible else { return }
+        scheduleAutoHide()
     }
 
     // MARK: - Hit-testing the panel's own text
