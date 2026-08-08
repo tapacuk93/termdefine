@@ -126,7 +126,8 @@ Requests go to `POST /v1/messages` with `claude-opus-5`, thinking disabled at `l
 
 ## Dismissing the panel
 
-Click anywhere, scroll, press a key, or wait 30 seconds. Esc closes it too.
+Click outside it, or press Esc. It has no timeout, and typing or scrolling in the terminal
+leaves it alone — so it can sit there while you keep working.
 
 ## Layout
 

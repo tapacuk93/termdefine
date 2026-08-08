@@ -5,7 +5,7 @@ import AppKit
 ///
 /// Every metric below is expressed at scale 1.0 and multiplied by `Settings.panelScale`,
 /// which ⌘+ / ⌘− adjust and which persists between launches.
-final class DefinitionPanel: NSObject, NSWindowDelegate {
+final class DefinitionPanel: NSObject {
 
     /// The Claude-powered, screen-aware section under the offline definition.
     enum ContextState {
@@ -28,7 +28,6 @@ final class DefinitionPanel: NSObject, NSWindowDelegate {
     private var contextState: ContextState = .hidden
 
     private var monitors: [Any] = []
-    private var autoHide: DispatchWorkItem?
 
     private var tokens: [String] = []
     var onTokenSelected: ((String) -> Void)?
@@ -63,7 +62,6 @@ final class DefinitionPanel: NSObject, NSWindowDelegate {
         contextState = state
         applyContext()
         layoutContents(keepingTopLeft: true)
-        scheduleAutoHide()
     }
 
     /// ⌘+ / ⌘− while the panel is showing.
@@ -76,12 +74,9 @@ final class DefinitionPanel: NSObject, NSWindowDelegate {
         applyFonts()
         rebuildChips()
         layoutContents(keepingTopLeft: true)
-        scheduleAutoHide()
     }
 
     func hide() {
-        autoHide?.cancel()
-        autoHide = nil
         removeMonitors()
         panel?.orderOut(nil)
     }
@@ -152,8 +147,8 @@ final class DefinitionPanel: NSObject, NSWindowDelegate {
         panel.animationBehavior = .utilityWindow
         // Drag the panel by its background or header to move it out of the way. The body and
         // context labels stay selectable, so a drag starting on those selects text instead.
+        // Moving it is free — the panel has no dismissal timer to disturb.
         panel.isMovableByWindowBackground = true
-        panel.delegate = self
         self.panel = panel
 
         applyFonts()
@@ -323,30 +318,20 @@ final class DefinitionPanel: NSObject, NSWindowDelegate {
         guard let panel else { return }
         panel.orderFrontRegardless()
         installMonitors()
-        scheduleAutoHide()
     }
 
     // MARK: - Dismissal
 
-    private func scheduleAutoHide() {
-        autoHide?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.hide() }
-        autoHide = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: work)
-    }
-
+    /// The panel stays up until it is dismissed deliberately: a click outside it, or Esc.
+    /// It does not time out, and typing or scrolling in the terminal leaves it alone, so it
+    /// can be read while you keep working.
     private func installMonitors() {
         guard monitors.isEmpty else { return }
+        // Global monitors never see this app's own events, so anything here is a click
+        // somewhere else — including on the terminal underneath.
         let outside = NSEvent.addGlobalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel, .keyDown]
-        ) { [weak self] event in
-            // ⌘+ / ⌘− are the zoom shortcuts; they're consumed before reaching here, but
-            // guard anyway so a stray one never dismisses the panel it's resizing.
-            if event.type == .keyDown,
-               event.modifierFlags.contains(.command),
-               [24, 27, 69, 78].contains(Int(event.keyCode)) {
-                return
-            }
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
             self?.hide()
         }
         let inside = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { [weak self] event in
@@ -373,15 +358,6 @@ final class DefinitionPanel: NSObject, NSWindowDelegate {
     private func removeMonitors() {
         monitors.forEach { NSEvent.removeMonitor($0) }
         monitors.removeAll()
-    }
-
-    // MARK: - NSWindowDelegate
-
-    /// Someone just dragged the panel somewhere deliberate — restart the dismissal clock so
-    /// it doesn't vanish moments after being repositioned.
-    func windowDidMove(_ notification: Notification) {
-        guard isVisible else { return }
-        scheduleAutoHide()
     }
 
     // MARK: - Hit-testing the panel's own text
